@@ -4,6 +4,89 @@ import io from 'socket.io-client';
 import confetti from 'canvas-confetti';
 import { api } from '../api';
 
+const customerDict = {
+  en: {
+    menu: "Explore Culinary Selections",
+    search: "Search food items...",
+    cart: "My Basket",
+    callWaiter: "Call Waiter",
+    googleReview: "Google Review",
+    share: "Share Menu",
+    myOrders: "My Orders",
+    addToCart: "Add item to Cart",
+    placeOrder: "Submit & Place Order",
+    done: "Done",
+    close: "Close",
+    specialInstructions: "Special Instructions (Optional)",
+    instructionsPlaceholder: "e.g. Make it less spicy, no onions, extra ice...",
+    subtotal: "Subtotal amount:",
+    viewCart: "View Cart Drawer",
+    itemsAdded: "Items Added",
+    trackingTitle: "Track Your Order",
+    currentStatus: "Current Status",
+    cookingTimeline: "Cooking Timeline",
+    summary: "Summary",
+    totalBill: "Total bill:",
+    backToMenu: "Back to Menu",
+    addMore: "Add More Items / Order More",
+    myPastOrders: "My Past Orders",
+    noPastOrders: "You haven't placed any orders in this session yet.",
+    orderPlaced: "Order Placed!",
+    statusNew: "Received by restaurant",
+    statusAccepted: "Confirmed by restaurant",
+    statusPreparing: "Chef is preparing your ingredients",
+    statusReady: "Meals cooked & prepared",
+    statusServed: "Delivered to your table",
+    orderNo: "Order No:",
+    payment: "Payment Status:",
+    paid: "Paid",
+    unpaid: "Unpaid",
+    selectSize: "Select Size / Variant",
+    addSize: "Add Size to Basket",
+    totalAmount: "Total Amount"
+  },
+  hi: {
+    menu: "मेन्यू की खोज करें",
+    search: "खाद्य पदार्थ खोजें...",
+    cart: "मेरी टोकरी",
+    callWaiter: "वेटर बुलाएं",
+    googleReview: "गूगल समीक्षा",
+    share: "मेन्यू साझा करें",
+    myOrders: "मेरे ऑर्डर्स",
+    addToCart: "टोकरी में जोड़ें",
+    placeOrder: "ऑर्डर सबमिट करें",
+    done: "पूर्ण",
+    close: "बंद करें",
+    specialInstructions: "विशेष निर्देश (वैकल्पिक)",
+    instructionsPlaceholder: "जैसे - कम तीखा करें, प्याज न डालें, अधिक बर्फ...",
+    subtotal: "कुल राशि:",
+    viewCart: "टोकरी देखें",
+    itemsAdded: "आइटम जोड़े गए",
+    trackingTitle: "अपना ऑर्डर ट्रैक करें",
+    currentStatus: "वर्तमान स्थिति",
+    cookingTimeline: "तैयारी की समयरेखा",
+    summary: "सारांश",
+    totalBill: "कुल बिल:",
+    backToMenu: "मेन्यू पर वापस जाएं",
+    addMore: "और आइटम जोड़ें / ऑर्डर करें",
+    myPastOrders: "मेरे पिछले ऑर्डर्स",
+    noPastOrders: "आपने इस सत्र में अभी तक कोई ऑर्डर नहीं दिया है।",
+    orderPlaced: "ऑर्डर दिया गया!",
+    statusNew: "रेस्टोरेंट को प्राप्त हुआ",
+    statusAccepted: "रेस्टोरेंट द्वारा स्वीकृत",
+    statusPreparing: "शेफ आपकी सामग्री तैयार कर रहे हैं",
+    statusReady: "भोजन तैयार है",
+    statusServed: "आपकी टेबल पर परोसा गया",
+    orderNo: "ऑर्डर संख्या:",
+    payment: "भुगतान की स्थिति:",
+    paid: "भुगतान किया",
+    unpaid: "बकाया",
+    selectSize: "आकार / प्रकार चुनें",
+    addSize: "आकार जोड़ें",
+    totalAmount: "कुल मूल्य"
+  }
+};
+
 export default function CustomerMenu() {
   const { slug, orderId } = useParams();
   const [searchParams] = useSearchParams();
@@ -29,13 +112,17 @@ export default function CustomerMenu() {
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [showPwaBanner, setShowPwaBanner] = useState(true);
   const [customerInfo, setCustomerInfo] = useState({
-    name: '',
-    mobile: '',
-    email: '',
-    dateOfBirth: '',
-    anniversaryDate: ''
+    name: '', mobile: '', email: '', dateOfBirth: '', anniversaryDate: ''
   });
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+
+  // New States for Advanced features
+  const [variantSelectorItem, setVariantSelectorItem] = useState(null);
+  const [lang, setLang] = useState(localStorage.getItem('customer_lang') || 'en');
+  const [isMyOrdersOpen, setIsMyOrdersOpen] = useState(false);
+  const [myOrders, setMyOrders] = useState([]);
+  const [myOrdersLoading, setMyOrdersLoading] = useState(false);
+  const t = customerDict[lang] || customerDict.en;
 
   // Tracking state
   const [trackingOrder, setTrackingOrder] = useState(null);
@@ -43,7 +130,12 @@ export default function CustomerMenu() {
 
   const socketRef = useRef(null);
 
+  // Prune local logs and load menu
   useEffect(() => {
+    const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
+    const placedOrders = JSON.parse(localStorage.getItem('placed_order_ids') || '[]');
+    const freshOrders = placedOrders.filter(o => o.timestamp > twelveHoursAgo);
+    localStorage.setItem('placed_order_ids', JSON.stringify(freshOrders));
     fetchMenu();
   }, [slug]);
 
@@ -107,30 +199,57 @@ export default function CustomerMenu() {
     });
   };
 
-  // --- Cart Actions ---
-  const handleAddToCart = (item) => {
-    setCart((prev) => {
-      const existing = prev.find(i => i._id === item._id);
-      if (existing) {
-        return prev.map(i => i._id === item._id ? { ...i, quantity: i.quantity + 1 } : i);
+  const fetchMyOrders = async () => {
+    try {
+      setMyOrdersLoading(true);
+      const placedOrders = JSON.parse(localStorage.getItem('placed_order_ids') || '[]');
+      const ids = placedOrders.map(o => o.id).join(',');
+      if (ids) {
+        const data = await api.customer.getOrdersBatch(ids);
+        setMyOrders(data);
+      } else {
+        setMyOrders([]);
       }
-      return [...prev, { ...item, quantity: 1 }];
+    } catch (err) {
+      console.error('Error fetching placed orders:', err);
+    } finally {
+      setMyOrdersLoading(false);
+    }
+  };
+
+  // --- Cart Actions ---
+  const handleAddToCart = (item, variantName) => {
+    if (item.hasVariants && !variantName) {
+      setVariantSelectorItem(item);
+      return;
+    }
+    const price = variantName
+      ? (item.variants?.find(v => v.name === variantName)?.price || item.price)
+      : item.price;
+
+    setCart((prev) => {
+      const cartId = `${item._id}_${variantName || ''}`;
+      const existing = prev.find(i => i.cartId === cartId);
+      if (existing) {
+        return prev.map(i => i.cartId === cartId ? { ...i, quantity: i.quantity + 1 } : i);
+      }
+      return [...prev, { ...item, variantName, price, cartId, quantity: 1 }];
     });
   };
 
-  const handleDecreaseQuantity = (item) => {
+  const handleDecreaseQuantity = (item, variantName) => {
+    const cartId = `${item._id}_${variantName || ''}`;
     setCart((prev) => {
-      const existing = prev.find(i => i._id === item._id);
+      const existing = prev.find(i => i.cartId === cartId);
       if (existing?.quantity === 1) {
-        return prev.filter(i => i._id !== item._id);
+        return prev.filter(i => i.cartId !== cartId);
       }
-      return prev.map(i => i._id === item._id ? { ...i, quantity: i.quantity - 1 } : i);
+      return prev.map(i => i.cartId === cartId ? { ...i, quantity: i.quantity - 1 } : i);
     });
   };
 
   const getItemQuantityInCart = (itemId) => {
-    const existing = cart.find(i => i._id === itemId);
-    return existing ? existing.quantity : 0;
+    return cart.filter(i => i._id === itemId).reduce((sum, i) => sum + i.quantity, 0);
   };
 
   const getCartTotalAmount = () => {
@@ -161,6 +280,7 @@ export default function CustomerMenu() {
         items: cart.map(i => ({
           menuItemId: i._id,
           quantity: i.quantity,
+          variantName: i.variantName || '',
           specialInstructions: ''
         })),
         customer: customerInfo,
@@ -169,6 +289,11 @@ export default function CustomerMenu() {
 
       const res = await api.customer.placeOrder(payload);
       
+      // Save order to session log
+      const placedOrders = JSON.parse(localStorage.getItem('placed_order_ids') || '[]');
+      placedOrders.push({ id: res._id, timestamp: Date.now() });
+      localStorage.setItem('placed_order_ids', JSON.stringify(placedOrders));
+
       // Trigger celebrate effects
       confetti({ particleCount: 150, spread: 90, origin: { y: 0.6 } });
       
@@ -206,8 +331,18 @@ export default function CustomerMenu() {
     alert('Menu link copied to clipboard!');
   };
 
+  const handleCallWaiter = async () => {
+    try {
+      await api.customer.callWaiter(slug, tableName);
+      alert('Waiter has been notified! Someone will assist you shortly.');
+    } catch (err) {
+      alert('Failed to alert service staff: ' + err.message);
+    }
+  };
+
   const configuredActions = () => {
     const defaults = [
+      { type: 'callWaiter', label: 'Call Waiter', icon: 'notifications_active', enabled: true },
       { type: 'shareMenu', label: 'Share', icon: 'share', enabled: true },
       { type: 'googleReview', label: 'Review', icon: 'reviews', url: restaurant?.reviewLink, enabled: !!restaurant?.reviewLink },
       { type: 'instagram', label: 'Instagram', icon: 'photo_camera', url: restaurant?.socialLinks?.instagram, enabled: !!restaurant?.socialLinks?.instagram },
@@ -220,6 +355,11 @@ export default function CustomerMenu() {
   };
 
   const runAction = (action) => {
+    if (action.type === 'callWaiter') {
+      handleCallWaiter();
+      setIsActionMenuOpen(false);
+      return;
+    }
     if (action.type === 'shareMenu') {
       setIsShareOpen(true);
       setIsActionMenuOpen(false);
@@ -395,16 +535,36 @@ export default function CustomerMenu() {
             <h1 className="font-bold text-lg text-slate-800">{restaurant?.name || 'Spice Garden'}</h1>
           </div>
           
-          <div className="flex items-center gap-2 text-slate-500">
+          <div className="flex items-center gap-1.5 text-slate-500">
+            <button
+              onClick={() => {
+                const nextLang = lang === 'en' ? 'hi' : 'en';
+                setLang(nextLang);
+                localStorage.setItem('customer_lang', nextLang);
+              }}
+              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-extrabold rounded-lg text-[9px] cursor-pointer transition-all uppercase shrink-0"
+            >
+              {lang === 'en' ? 'हिन्दी' : 'EN'}
+            </button>
+            <button
+              onClick={() => {
+                setIsMyOrdersOpen(true);
+                fetchMyOrders();
+              }}
+              className="material-symbols-outlined hover:bg-slate-50 p-1.5 rounded-full cursor-pointer"
+              title={t.myOrders}
+            >
+              receipt_long
+            </button>
             <button 
               onClick={() => setIsSearchOpen(true)}
-              className="material-symbols-outlined hover:bg-slate-50 p-2 rounded-full cursor-pointer"
+              className="material-symbols-outlined hover:bg-slate-50 p-1.5 rounded-full cursor-pointer"
             >
               search
             </button>
             <button 
               onClick={() => setIsShareOpen(true)}
-              className="material-symbols-outlined hover:bg-slate-50 p-2 rounded-full cursor-pointer"
+              className="material-symbols-outlined hover:bg-slate-50 p-1.5 rounded-full cursor-pointer"
             >
               share
             </button>
@@ -479,7 +639,7 @@ export default function CustomerMenu() {
                       onClick={() => setSelectedItem(item)}
                       className="h-28 bg-slate-50 overflow-hidden relative cursor-pointer"
                     >
-                      {item.image ? (
+              {item.image ? (
                         <img 
                           src={item.image.startsWith('http') ? item.image : `http://localhost:5000${item.image}`} 
                           alt={item.name} 
@@ -504,22 +664,45 @@ export default function CustomerMenu() {
                       
                       {/* Footer price + +/- adder button targets */}
                       <div className="mt-auto pt-3 flex justify-between items-center">
-                        <span className="font-bold text-slate-800">₹{item.price}</span>
+                        <span className="font-bold text-slate-800">
+                          {item.hasVariants && item.variants && item.variants.length > 0
+                            ? `₹${Math.min(...item.variants.map(v => v.price))}+`
+                            : `₹${item.price}`}
+                        </span>
                         
-                        {qty > 0 ? (
-                          <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded-lg text-xs font-bold text-[#006C49]">
-                            <button onClick={() => handleDecreaseQuantity(item)} className="w-5 h-5 flex items-center justify-center cursor-pointer">-</button>
-                            <span>{qty}</span>
-                            <button onClick={() => handleAddToCart(item)} className="w-5 h-5 flex items-center justify-center cursor-pointer">+</button>
-                          </div>
+                        {item.hasVariants ? (
+                          qty > 0 ? (
+                            <button
+                              onClick={() => handleAddToCart(item)}
+                              className="px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-lg text-[10px] font-bold text-[#006C49] cursor-pointer hover:bg-emerald-100/70 transition-all"
+                            >
+                              {qty} Added
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleAddToCart(item)}
+                              className="w-7 h-7 rounded-lg text-white flex items-center justify-center shadow cursor-pointer active:scale-90 transition-transform font-bold"
+                              style={{ backgroundColor: 'var(--primary-color)' }}
+                            >
+                              +
+                            </button>
+                          )
                         ) : (
-                          <button 
-                            onClick={() => handleAddToCart(item)}
-                            className="w-7 h-7 rounded-lg text-white flex items-center justify-center shadow cursor-pointer active:scale-90 transition-transform"
-                            style={{ backgroundColor: 'var(--primary-color)' }}
-                          >
-                            +
-                          </button>
+                          qty > 0 ? (
+                            <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded-lg text-xs font-bold text-[#006C49]">
+                              <button onClick={() => handleDecreaseQuantity(item)} className="w-5 h-5 flex items-center justify-center cursor-pointer">-</button>
+                              <span>{qty}</span>
+                              <button onClick={() => handleAddToCart(item)} className="w-5 h-5 flex items-center justify-center cursor-pointer">+</button>
+                            </div>
+                          ) : (
+                            <button 
+                              onClick={() => handleAddToCart(item)}
+                              className="w-7 h-7 rounded-lg text-white flex items-center justify-center shadow cursor-pointer active:scale-90 transition-transform font-bold"
+                              style={{ backgroundColor: 'var(--primary-color)' }}
+                            >
+                              +
+                            </button>
+                          )
                         )}
                       </div>
                     </div>
@@ -647,7 +830,11 @@ export default function CustomerMenu() {
                   {selectedItem.tags[0]}
                 </span>
                 <h2 className="text-xl font-bold text-slate-800">{selectedItem.name}</h2>
-                <span className="text-lg font-bold text-slate-800 block mt-1">₹{selectedItem.price}</span>
+                <span className="text-lg font-bold text-slate-800 block mt-1">
+                  {selectedItem.hasVariants && selectedItem.variants && selectedItem.variants.length > 0 
+                    ? `₹${Math.min(...selectedItem.variants.map(v => v.price))}+` 
+                    : `₹${selectedItem.price}`}
+                </span>
               </div>
 
               <p className="text-slate-500 text-xs leading-relaxed">{selectedItem.description || 'Delicately cooked by our master chefs matching custom traditional guidelines.'}</p>
@@ -660,7 +847,7 @@ export default function CustomerMenu() {
                 className="w-full h-12 text-white font-bold rounded-xl cursor-pointer"
                 style={{ backgroundColor: 'var(--primary-color)' }}
               >
-                Add item to Cart
+                {selectedItem.hasVariants ? t.selectSize : t.addToCart}
               </button>
             </div>
           </div>
@@ -673,7 +860,7 @@ export default function CustomerMenu() {
           <div className="bg-white rounded-t-3xl w-full max-w-md shadow-2xl overflow-hidden relative text-left flex flex-col max-h-[90%]">
             <div className="p-5 border-b border-slate-100 flex justify-between items-center">
               <div>
-                <h2 className="text-sm font-bold text-slate-800">My Basket</h2>
+                <h2 className="text-sm font-bold text-slate-800">{t.cart}</h2>
                 <span className="text-[10px] text-slate-400 block mt-0.5">Submitting to {tableName}</span>
               </div>
               <button 
@@ -688,16 +875,18 @@ export default function CustomerMenu() {
             <div className="p-5 flex-grow overflow-y-auto space-y-4">
               <div className="divide-y divide-slate-100">
                 {cart.map((it) => (
-                  <div key={it._id} className="py-3 flex justify-between items-center text-xs">
+                  <div key={it.cartId} className="py-3 flex justify-between items-center text-xs">
                     <div>
-                      <span className="font-semibold text-slate-800 block">{it.name}</span>
+                      <span className="font-semibold text-slate-800 block">
+                        {it.name} {it.variantName ? <strong className="text-emerald-600 font-extrabold">({it.variantName})</strong> : null}
+                      </span>
                       <span className="text-slate-400 block mt-0.5">₹{it.price} each</span>
                     </div>
                     
                     <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg font-bold">
-                      <button onClick={() => handleDecreaseQuantity(it)} className="text-slate-500">-</button>
+                      <button onClick={() => handleDecreaseQuantity(it, it.variantName)} className="text-slate-500 hover:text-slate-700 cursor-pointer">-</button>
                       <span className="text-slate-800">{it.quantity}</span>
-                      <button onClick={() => handleAddToCart(it)} className="text-slate-500">+</button>
+                      <button onClick={() => handleAddToCart(it, it.variantName)} className="text-slate-500 hover:text-slate-700 cursor-pointer">+</button>
                     </div>
                   </div>
                 ))}
@@ -726,11 +915,11 @@ export default function CustomerMenu() {
 
               {/* Cooking request note */}
               <div className="space-y-1.5 pt-4">
-                <label className="block text-slate-600 text-xs font-semibold">Special Instructions (Optional)</label>
+                <label className="block text-slate-600 text-xs font-semibold">{t.specialInstructions}</label>
                 <textarea 
                   rows="2"
                   className="w-full p-3 border border-slate-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#003b1b]"
-                  placeholder="e.g. Make it less spicy, no onions, extra ice..."
+                  placeholder={t.instructionsPlaceholder}
                   value={specialInstructions}
                   onChange={(e) => setSpecialInstructions(e.target.value)}
                 />
@@ -740,7 +929,7 @@ export default function CustomerMenu() {
             {/* Sticky checkout total footer */}
             <div className="p-5 border-t border-slate-100 bg-slate-50/50 space-y-4">
               <div className="flex justify-between font-bold text-xs text-slate-700">
-                <span>Subtotal amount:</span>
+                <span>{t.subtotal}</span>
                 <span>₹{getCartTotalAmount()}</span>
               </div>
               <button 
@@ -748,7 +937,7 @@ export default function CustomerMenu() {
                 className="w-full h-12 text-white font-bold rounded-xl shadow-lg transition-transform active:scale-[0.98] cursor-pointer"
                 style={{ backgroundColor: 'var(--primary-color)' }}
               >
-                Submit & Place Order (₹{getCartTotalAmount()})
+                {t.placeOrder} (₹{getCartTotalAmount()})
               </button>
             </div>
           </div>
@@ -773,7 +962,7 @@ export default function CustomerMenu() {
               <input 
                 type="text" 
                 className="bg-transparent border-none outline-none focus:ring-0 w-full"
-                placeholder="Search food items..."
+                placeholder={t.search}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 autoFocus
@@ -794,21 +983,45 @@ export default function CustomerMenu() {
                     <div className="p-3 flex flex-col flex-grow">
                       <h4 className="font-semibold text-slate-800 truncate">{item.name}</h4>
                       <div className="mt-auto pt-2 flex justify-between items-center">
-                        <span className="font-bold text-slate-800">₹{item.price}</span>
-                        {qty > 0 ? (
-                          <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded text-[10px] font-bold text-[#006C49]">
-                            <button onClick={() => handleDecreaseQuantity(item)}>-</button>
-                            <span>{qty}</span>
-                            <button onClick={() => handleAddToCart(item)}>+</button>
-                          </div>
+                        <span className="font-bold text-slate-800">
+                          {item.hasVariants && item.variants && item.variants.length > 0 
+                            ? `₹${Math.min(...item.variants.map(v => v.price))}+` 
+                            : `₹${item.price}`}
+                        </span>
+                        
+                        {item.hasVariants ? (
+                          qty > 0 ? (
+                            <button
+                              onClick={() => handleAddToCart(item)}
+                              className="px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded text-[9px] font-bold text-[#006C49] cursor-pointer hover:bg-emerald-100/70"
+                            >
+                              {qty} Added
+                            </button>
+                          ) : (
+                            <button 
+                              onClick={() => handleAddToCart(item)}
+                              className="w-6 h-6 rounded flex items-center justify-center text-white font-bold"
+                              style={{ backgroundColor: 'var(--primary-color)' }}
+                            >
+                              +
+                            </button>
+                          )
                         ) : (
-                          <button 
-                            onClick={() => handleAddToCart(item)}
-                            className="w-6 h-6 rounded flex items-center justify-center text-white font-bold"
-                            style={{ backgroundColor: 'var(--primary-color)' }}
-                          >
-                            +
-                          </button>
+                          qty > 0 ? (
+                            <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded text-[10px] font-bold text-[#006C49]">
+                              <button onClick={() => handleDecreaseQuantity(item)}>-</button>
+                              <span>{qty}</span>
+                              <button onClick={() => handleAddToCart(item)}>+</button>
+                            </div>
+                          ) : (
+                            <button 
+                              onClick={() => handleAddToCart(item)}
+                              className="w-6 h-6 rounded flex items-center justify-center text-white font-bold"
+                              style={{ backgroundColor: 'var(--primary-color)' }}
+                            >
+                              +
+                            </button>
+                          )
                         )}
                       </div>
                     </div>
@@ -830,7 +1043,7 @@ export default function CustomerMenu() {
             >
               <span className="material-symbols-outlined">close</span>
             </button>
-            <h2 className="text-sm font-bold text-slate-800 mb-2">Share Our Menu</h2>
+            <h2 className="text-sm font-bold text-slate-800 mb-2">{t.share}</h2>
             <p className="text-[10px] text-slate-400 mb-6">Let your friends scan and browse our menu instantly.</p>
 
             <div className="bg-slate-50 border border-slate-200/50 p-4 rounded-2xl inline-block shadow-inner mb-6">
@@ -857,6 +1070,154 @@ export default function CustomerMenu() {
               >
                 WhatsApp Share
               </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Variant Selector Popup Modal */}
+      {variantSelectorItem && (
+        <div className="fixed inset-0 bg-slate-900/60 z-[80] flex items-end justify-center p-0 md:p-4">
+          <div className="bg-white rounded-t-3xl md:rounded-3xl w-full max-w-md shadow-2xl p-5 relative text-left">
+            <button
+              onClick={() => setVariantSelectorItem(null)}
+              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 cursor-pointer"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+            <h2 className="text-sm font-bold text-slate-800 mb-1">{t.selectSize}</h2>
+            <p className="text-[10px] text-slate-400 mb-4">{variantSelectorItem.name}</p>
+
+            <div className="space-y-2 mb-6">
+              {variantSelectorItem.variants.map((v) => {
+                const cartId = `${variantSelectorItem._id}_${v.name}`;
+                const itemQty = cart.find(ci => ci.cartId === cartId)?.quantity || 0;
+                return (
+                  <div key={v.name} className="flex justify-between items-center p-3 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors">
+                    <div>
+                      <span className="font-semibold text-slate-800 text-xs">{v.name}</span>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">₹{v.price}</span>
+                    </div>
+                    
+                    {itemQty > 0 ? (
+                      <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded-lg text-xs font-bold text-[#006C49]">
+                        <button onClick={() => handleDecreaseQuantity(variantSelectorItem, v.name)} className="w-5 h-5 flex items-center justify-center cursor-pointer">-</button>
+                        <span>{itemQty}</span>
+                        <button onClick={() => handleAddToCart(variantSelectorItem, v.name)} className="w-5 h-5 flex items-center justify-center cursor-pointer">+</button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleAddToCart(variantSelectorItem, v.name)}
+                        className="px-3 py-1.5 bg-[#003b1b] hover:bg-[#166534] text-white font-bold rounded-lg text-[10px] cursor-pointer shadow-sm"
+                        style={{ backgroundColor: 'var(--primary-color)' }}
+                      >
+                        {t.addToCart}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            
+            <button
+              onClick={() => setVariantSelectorItem(null)}
+              className="w-full h-11 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer transition-colors"
+            >
+              {t.done}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* CM-07: My Orders Drawer Overlay */}
+      {isMyOrdersOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 z-[70] flex items-end justify-center p-0">
+          <div className="bg-white rounded-t-3xl w-full max-w-md shadow-2xl overflow-hidden relative text-left flex flex-col max-h-[90%]">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div>
+                <h2 className="text-sm font-bold text-slate-800">{t.myPastOrders}</h2>
+                <p className="text-[10px] text-slate-400 block mt-0.5">Session orders placed within past 12 hrs</p>
+              </div>
+              <button 
+                onClick={() => setIsMyOrdersOpen(false)}
+                className="material-symbols-outlined text-slate-400 hover:text-slate-600"
+              >
+                close
+              </button>
+            </div>
+
+            {/* Content area */}
+            <div className="p-5 flex-grow overflow-y-auto space-y-4">
+              {myOrdersLoading ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-700 mx-auto"></div>
+                </div>
+              ) : myOrders.length === 0 ? (
+                <div className="text-center py-12 space-y-3">
+                  <span className="material-symbols-outlined text-slate-300 text-5xl">receipt_long</span>
+                  <p className="text-slate-400 text-xs">{t.noPastOrders}</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {myOrders.map((ord) => (
+                    <div key={ord._id} className="border border-slate-150 rounded-2xl p-4 bg-slate-50/30 space-y-3 text-xs">
+                      <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                        <div>
+                          <span className="font-bold text-slate-800 text-xs block">{ord.orderNumber}</span>
+                          <span className="text-[10px] text-slate-400 block mt-0.5">
+                            {new Date(ord.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                          ord.status === 'New' ? 'bg-amber-100 text-amber-600' :
+                          ord.status === 'Accepted' ? 'bg-blue-100 text-blue-600' :
+                          ord.status === 'Preparing' ? 'bg-indigo-100 text-indigo-600' :
+                          ord.status === 'Ready' ? 'bg-emerald-100 text-emerald-600' :
+                          ord.status === 'Completed' ? 'bg-slate-100 text-slate-500' : 'bg-red-100 text-red-600'
+                        }`}>
+                          {ord.status}
+                        </span>
+                      </div>
+                      
+                      {/* Items summary */}
+                      <div className="space-y-1">
+                        {ord.items.map((it, idx) => (
+                          <div key={idx} className="flex justify-between text-[11px] text-slate-600 font-mono">
+                            <span>{it.name} {it.variantName ? <strong className="text-emerald-600 font-bold">({it.variantName})</strong> : null} (x{it.quantity})</span>
+                            <span>₹{it.price * it.quantity}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="border-t border-slate-100 pt-2 flex justify-between items-center text-xs">
+                        <div className="flex items-center gap-1.5 text-[10px]">
+                          <span className="text-slate-400">{t.payment}</span>
+                          <span className={`px-1.5 py-0.25 rounded text-[8px] font-black uppercase tracking-wider ${
+                            ord.paymentStatus === 'Paid'
+                              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                              : 'bg-red-50 text-red-500 border border-red-200'
+                          }`}>
+                            {ord.paymentStatus === 'Paid' ? t.paid : t.unpaid}
+                          </span>
+                        </div>
+                        <div className="font-extrabold text-[#003b1b] text-sm">
+                          ₹{ord.totalAmount}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-5 border-t border-slate-100 bg-slate-50/50">
+              <button 
+                onClick={() => setIsMyOrdersOpen(false)}
+                className="w-full h-11 bg-[#003b1b] hover:bg-[#166534] text-white font-bold rounded-xl text-xs cursor-pointer transition-colors"
+                style={{ backgroundColor: 'var(--primary-color)' }}
+              >
+                {t.close}
+              </button>
             </div>
           </div>
         </div>

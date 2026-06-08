@@ -52,7 +52,6 @@ const apiFetch = async (endpoint, options = {}, role = 'restaurant') => {
 };
 
 export const api = {
-  // Authentication
   auth: {
     superAdminLogin: (email, password) => 
       apiFetch('/auth/superadmin/login', {
@@ -63,6 +62,11 @@ export const api = {
       apiFetch('/auth/restaurant/login', {
         method: 'POST',
         body: JSON.stringify({ username, password })
+      }),
+    pinLogin: (slug, role, pin) =>
+      apiFetch('/auth/pin-login', {
+        method: 'POST',
+        body: JSON.stringify({ slug, role, pin })
       })
   },
 
@@ -96,6 +100,20 @@ export const api = {
     },
     impersonate: (restaurantId) => apiFetch(`/superadmin/impersonate/${restaurantId}`, {
       method: 'POST'
+    }, 'superadmin'),
+    
+    // Plans CRUD
+    getPlans: () => apiFetch('/superadmin/plans', {}, 'superadmin'),
+    createPlan: (data) => apiFetch('/superadmin/plans', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }, 'superadmin'),
+    updatePlanDetails: (id, data) => apiFetch(`/superadmin/plans/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }, 'superadmin'),
+    deletePlan: (id) => apiFetch(`/superadmin/plans/${id}`, {
+      method: 'DELETE'
     }, 'superadmin')
   },
 
@@ -226,6 +244,10 @@ export const api = {
     requestBill: (id) => apiFetch(`/orders/${id}/bill-request`, {
       method: 'PATCH'
     }),
+    updatePaymentStatus: (id, paymentStatus) => apiFetch(`/orders/${id}/payment`, {
+      method: 'PATCH',
+      body: JSON.stringify({ paymentStatus })
+    }),
     exportCsvUrl: () => `${API_BASE}/orders/export?token=${encodeURIComponent(getRestaurantToken() || '')}`,
   },
 
@@ -249,7 +271,34 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(orderData)
     }),
-    getOrderStatus: (orderId) => apiFetch(`/customer/orders/${orderId}`)
+    getOrderStatus: (orderId) => apiFetch(`/customer/orders/${orderId}`),
+    getOrdersBatch: (ids) => apiFetch(`/customer/orders/batch?ids=${encodeURIComponent(ids)}`),
+    callWaiter: (slug, tableOrRoomName) => apiFetch('/customer/call-waiter', {
+      method: 'POST',
+      body: JSON.stringify({ slug, tableOrRoomName })
+    })
+  },
+
+  // Waiter Panel Endpoints
+  waiter: {
+    getTables: () => apiFetch('/waiter/tables'),
+    placeOrder: (orderData) => apiFetch('/waiter/orders', {
+      method: 'POST',
+      body: JSON.stringify(orderData)
+    }),
+    getCalls: () => apiFetch('/waiter/calls'),
+    attendCall: (id) => apiFetch(`/waiter/calls/${id}/attend`, {
+      method: 'PATCH'
+    })
+  },
+
+  // Counter / Billing Endpoints
+  counter: {
+    getOrders: () => apiFetch('/counter/orders'),
+    completeOrder: (id) => apiFetch(`/counter/orders/${id}/complete`, {
+      method: 'POST'
+    }),
+    getSalesSummary: () => apiFetch('/counter/sales-summary')
   }
 };
 export { API_BASE };

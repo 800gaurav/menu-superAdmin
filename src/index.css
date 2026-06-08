@@ -6,6 +6,10 @@
   --primary-color-hover: #166534;
 }
 
+html {
+  font-size: 14px; /* Scales down all rem-based sizes globally */
+}
+
 body {
   font-family: 'Inter', sans-serif;
   background-color: #f7f9fb;
